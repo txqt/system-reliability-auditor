@@ -1,256 +1,205 @@
 ---
 name: system-reliability-auditor
-description: |
-  Audits backend systems for architectural, concurrency, lifecycle, and
-  state-management reliability issues using evidence-first analysis.
-risk: safe
-source: https://github.com/txqt/system-reliability-auditor
+description: "Use when auditing backend code for race conditions, lifecycle bugs, resource leaks, and concurrency reliability issues."
 ---
 
-# Goal
+# System Reliability Auditor
 
-Identify **architectural, concurrency, lifecycle, and state-management issues**
-across languages and runtimes and provide:
+## Overview
 
-- provable evidence derived from the supplied code
-- a minimal concrete fix plan for each issue
-- a risk level for prioritization
+This skill analyzes backend code to identify **reliability issues related to concurrency, lifecycle management, and resource handling**.
 
-The skill purposely **does not output state machines**; it uses state-machine
-reasoning internally to drive accurate findings.
+It focuses on **provable bugs** such as race conditions, cancellation issues, resource leaks, and invalid lifecycle transitions.
+
+The analysis uses **internal state-machine reasoning**, but outputs only concrete issues, evidence, and minimal fix plans.
 
 ---
 
-# Instructions
+## When to Use This Skill
 
-## 1) Analyze source code
+Use this skill when:
 
-- Infer module lifecycles internally (initialization, running, async operations,
-  shutdown, cancellation, recovery).
-- Only reason about states and transitions that are explicit in code or clearly
-  implied by lifecycle logic.
-- Do **not invent speculative states**.
+- auditing backend services for reliability issues
+- debugging race conditions or async bugs
+- reviewing worker / orchestrator lifecycle logic
+- checking shutdown or cancellation handling
+- inspecting IPC, process managers, or async loops
+- verifying safe resource cleanup (streams, processes, handles)
 
-## 2) Identify transition triggers
+---
+
+## Step-by-Step Guide
+
+### 1. Analyze the Source Code
+
+Inspect the provided code and identify modules responsible for:
+
+- lifecycle management
+- async processing
+- worker orchestration
+- resource allocation
+- process management
+
+Infer lifecycle phases internally such as:
+
+- initialization
+- running
+- async operations
+- cancellation
+- shutdown
+
+Only reason about states **clearly implied by the code**.
+
+---
+
+### 2. Identify State Transitions
 
 Look for transitions triggered by:
 
 - user actions
 - timers
-- async completions
-- cancellations
-- process exits
-- IPC messages
-- failures
+- async task completion
+- process exit
+- cancellation tokens
+- IPC events
+- failure paths
 
-Observe how these triggers move modules between lifecycle phases.
+Track how modules move between lifecycle phases.
 
-## 3) Report only verifiable issues
+---
 
-For each issue output exactly this structure:
+### 3. Detect Reliability Issues
+
+Check for common reliability problems:
+
+- race conditions
+- cancellation tokens ignored
+- resource leaks
+- invalid lifecycle transitions
+- partial initialization states
+- stale cached state divergence
+- cross-module state assumptions
+
+Only report issues that can be **proven from the code**.
+
+---
+
+### 4. Produce Structured Findings
+
+For each issue output:
 
 ISSUE:
 
 - Module / file
-- Exact problematic transition or logic
+- Exact problematic logic
 - Why it is dangerous
 
 EVIDENCE:
 
-- The exact code path or condition proving the issue
-- Example: line snippet, call sequence, or control-flow reasoning
+- Code path proving the issue
 
 FIX PLAN:
 
-- Minimal change required
-- Guard condition, refactor, cancellation propagation, or proper disposal
-- Provide a concrete code example when possible
+- Minimal fix required
 
 RISK LEVEL:
 
 LOW / MEDIUM / HIGH / CRITICAL
 
-If something cannot be proven from the code, label it:
+If evidence is incomplete, label:
 
 UNCERTAIN (needs confirmation)
 
-## 4) Prefer minimal, actionable fixes
-
-Favor:
-
-- guard clauses
-- lifecycle checks
-- cancellation propagation
-- correct disposal
-- small refactors
-
-Avoid proposing large architectural rewrites unless clearly required.
-
 ---
 
-# Verification (Multi-language)
+### 5. Verify Build and Tests
 
-After proposing fixes, verify that the project still builds and tests using the
-project's native tooling.
-
-Run the appropriate build and test commands depending on the ecosystem.
+After suggesting fixes, attempt to verify the project using its native toolchain.
 
 Examples:
 
-### .NET / C#
-
-Build:
-
-
+**.NET**
+```
 dotnet build
-
-
-Test:
-
-
 dotnet test
+```
 
-
-### Node.js
-
-Install:
-
-
+**Node.js**
+```
 npm ci
-
-
-Test:
-
-
 npm test
+```
 
-
-### Python
-
-Environment setup:
-
-
-python -m venv .venv
-.venv/bin/pip install -r requirements.txt
-
-
-Test:
-
-
+**Python**
+```
 pytest
+```
 
-
-### Go
-
-
+**Go**
+```
 go test ./...
+```
 
-
-### Rust
-
-
+**Rust**
+```
 cargo test
+```
 
-
-### Java
-
-Maven:
-
-
-mvn -B test
-
-
-Gradle:
-
-
-./gradlew test
-
-
-### Verification behavior
-
-- Run build and test commands in a sandboxed environment.
-- If build or tests fail, **report the failure with evidence**.
-- Do **not automatically rewrite large parts of the code**.
-- If build and tests succeed, mark verification as successful.
-- If the project has no build or tests, mark verification as **SKIPPED**.
+If the project has no tests, mark verification as **SKIPPED**.
 
 ---
 
-# Example
+## Examples
 
-## Worker ignoring cancellation
+### Example: Audit backend worker loop
 
-ISSUE:
+Prompt:
+> Audit the following worker implementation for concurrency and lifecycle reliability issues.
+> [PASTE CODE HERE]
 
-- Module: `WorkerLoop.cs`
-- Problematic logic: `while (true) { await DoWorkAsync(); }`
-- Shutdown calls `_cts.Cancel()` but the token is never observed.
-
-Why dangerous:
-
-The worker may never stop, causing shutdown hangs or leaked resources.
-
-EVIDENCE:
-
-- Worker loop uses `while (true)`
-- `DoWorkAsync()` does not accept a `CancellationToken`
-- Shutdown logic triggers `_cts.Cancel()` but no code observes it
-
-FIX PLAN:
-
-Change loop condition and propagate the cancellation token.
-
-Example:
-
-
-while (!_cts.Token.IsCancellationRequested)
-{
-await DoWorkAsync(_cts.Token);
-}
-
-
-Also add a time-limited shutdown join as a failsafe.
-
-RISK LEVEL:
-
-HIGH
+Expected output format:
+> ISSUE:
+> WorkerLoop.cs – infinite loop ignoring cancellation token
+> 
+> EVIDENCE:
+> while(true) loop with no CancellationToken checks
+> 
+> FIX PLAN:
+> Use while(!token.IsCancellationRequested) and pass token to async calls
+> 
+> RISK LEVEL:
+> HIGH
 
 ---
 
-## Child process leak
+### Example: Audit process manager
 
-ISSUE:
+Prompt:
+> Review this process manager for resource leaks and lifecycle issues.
+> [PASTE CODE HERE]
 
-- Module: `ProcessManager`
-- Problematic logic: child processes started but not tracked or disposed
+Expected output:
+> ISSUE:
+> ProcessManager.cs – child process not disposed
+> 
+> EVIDENCE:
+> Process.Start used without Exited handler or Dispose()
+> 
+> FIX PLAN:
+> EnableRaisingEvents = true and add cleanup during shutdown
+> 
+> RISK LEVEL:
+> CRITICAL
 
-Why dangerous:
+---
 
-Processes can outlive the orchestrator and become zombie processes.
+## Best Practices
 
-EVIDENCE:
+- ✅ Focus on **provable issues**
+- ✅ Prefer **minimal targeted fixes**
+- ✅ Use lifecycle reasoning internally
+- ✅ Verify fixes using the project build system
 
-
-var p = Process.Start(info);
-_workers.Add(p);
-
-
-No `Exited` handler or disposal logic exists.
-
-FIX PLAN:
-
-Enable exit events and ensure cleanup.
-
-Example:
-
-
-p.EnableRaisingEvents = true;
-p.Exited += OnChildExit;
-
-
-Ensure `Process.Dispose()` runs during shutdown and reconcile OS processes
-against the internal worker list.
-
-RISK LEVEL:
-
-CRITICAL
+- ❌ Do not invent speculative states
+- ❌ Do not output large architecture diagrams
+- ❌ Do not propose massive rewrites without evidence
