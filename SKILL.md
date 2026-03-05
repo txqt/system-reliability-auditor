@@ -1,17 +1,19 @@
 ---
 name: system-reliability-auditor
-description: "Use when auditing backend code for race conditions, lifecycle bugs, resource leaks, and concurrency reliability issues."
+description: "Use when auditing backend code for race conditions, lifecycle bugs, resource leaks, or concurrency reliability issues."
+risk: none
+source: https://github.com/txqt/system-reliability-auditor
 ---
 
 # System Reliability Auditor
 
 ## Overview
 
-This skill analyzes backend code to identify **reliability issues related to concurrency, lifecycle management, and resource handling**.
+This skill audits backend systems to detect **reliability issues related to concurrency, lifecycle management, and resource handling**.
 
-It focuses on **provable bugs** such as race conditions, cancellation issues, resource leaks, and invalid lifecycle transitions.
+It focuses on **provable problems** such as race conditions, cancellation bugs, resource leaks, and invalid lifecycle transitions.
 
-The analysis uses **internal state-machine reasoning**, but outputs only concrete issues, evidence, and minimal fix plans.
+The analysis uses internal state-machine reasoning but only outputs **concrete issues, evidence, and minimal fix plans**.
 
 ---
 
@@ -21,21 +23,21 @@ Use this skill when:
 
 - auditing backend services for reliability issues
 - debugging race conditions or async bugs
-- reviewing worker / orchestrator lifecycle logic
-- checking shutdown or cancellation handling
-- inspecting IPC, process managers, or async loops
-- verifying safe resource cleanup (streams, processes, handles)
+- reviewing worker or orchestrator lifecycle logic
+- inspecting IPC, process managers, or background workers
+- checking cancellation handling and shutdown behavior
+- verifying safe cleanup of processes, streams, or handles
 
 ---
 
 ## Step-by-Step Guide
 
-### 1. Analyze the Source Code
+### 1. Analyze the Code
 
 Inspect the provided code and identify modules responsible for:
 
 - lifecycle management
-- async processing
+- async tasks
 - worker orchestration
 - resource allocation
 - process management
@@ -44,24 +46,24 @@ Infer lifecycle phases internally such as:
 
 - initialization
 - running
-- async operations
+- async execution
 - cancellation
 - shutdown
 
-Only reason about states **clearly implied by the code**.
+Only reason about states clearly implied by the code.
 
 ---
 
-### 2. Identify State Transitions
+### 2. Identify Transition Triggers
 
 Look for transitions triggered by:
 
 - user actions
 - timers
 - async task completion
-- process exit
 - cancellation tokens
 - IPC events
+- process exit
 - failure paths
 
 Track how modules move between lifecycle phases.
@@ -73,7 +75,7 @@ Track how modules move between lifecycle phases.
 Check for common reliability problems:
 
 - race conditions
-- cancellation tokens ignored
+- ignored cancellation tokens
 - resource leaks
 - invalid lifecycle transitions
 - partial initialization states
@@ -106,7 +108,7 @@ RISK LEVEL:
 
 LOW / MEDIUM / HIGH / CRITICAL
 
-If evidence is incomplete, label:
+If something cannot be proven from the code, label it:
 
 UNCERTAIN (needs confirmation)
 
@@ -114,34 +116,39 @@ UNCERTAIN (needs confirmation)
 
 ### 5. Verify Build and Tests
 
-After suggesting fixes, attempt to verify the project using its native toolchain.
+After suggesting fixes, attempt to verify the project using its native tooling.
 
 Examples:
 
-**.NET**
-```
+.NET
+
+```bash
 dotnet build
 dotnet test
 ```
 
-**Node.js**
-```
+Node.js
+
+```bash
 npm ci
 npm test
 ```
 
-**Python**
-```
+Python
+
+```bash
 pytest
 ```
 
-**Go**
-```
+Go
+
+```bash
 go test ./...
 ```
 
-**Rust**
-```
+Rust
+
+```bash
 cargo test
 ```
 
@@ -151,34 +158,40 @@ If the project has no tests, mark verification as **SKIPPED**.
 
 ## Examples
 
-### Example: Audit backend worker loop
+### Example: Audit a worker loop
 
 Prompt:
-> Audit the following worker implementation for concurrency and lifecycle reliability issues.
+
+> Audit this worker implementation for lifecycle and concurrency reliability issues.
+> 
 > [PASTE CODE HERE]
 
 Expected output format:
+
 > ISSUE:
 > WorkerLoop.cs – infinite loop ignoring cancellation token
 > 
 > EVIDENCE:
-> while(true) loop with no CancellationToken checks
+> while(true) loop without observing CancellationToken
 > 
 > FIX PLAN:
-> Use while(!token.IsCancellationRequested) and pass token to async calls
+> Use while(!token.IsCancellationRequested) and propagate token to async calls
 > 
 > RISK LEVEL:
 > HIGH
 
 ---
 
-### Example: Audit process manager
+### Example: Audit a process manager
 
 Prompt:
-> Review this process manager for resource leaks and lifecycle issues.
+
+> Review this process manager implementation for resource leaks and lifecycle bugs.
+> 
 > [PASTE CODE HERE]
 
 Expected output:
+
 > ISSUE:
 > ProcessManager.cs – child process not disposed
 > 
@@ -186,7 +199,7 @@ Expected output:
 > Process.Start used without Exited handler or Dispose()
 > 
 > FIX PLAN:
-> EnableRaisingEvents = true and add cleanup during shutdown
+> EnableRaisingEvents = true and dispose process during shutdown
 > 
 > RISK LEVEL:
 > CRITICAL
@@ -195,11 +208,22 @@ Expected output:
 
 ## Best Practices
 
-- ✅ Focus on **provable issues**
+- ✅ Focus only on **provable issues**
 - ✅ Prefer **minimal targeted fixes**
 - ✅ Use lifecycle reasoning internally
-- ✅ Verify fixes using the project build system
+- ✅ Verify fixes using project build tools
 
 - ❌ Do not invent speculative states
 - ❌ Do not output large architecture diagrams
-- ❌ Do not propose massive rewrites without evidence
+- ❌ Do not propose large rewrites without evidence
+
+---
+
+## Limitations
+
+This skill has several limitations:
+
+- It cannot prove runtime race conditions without execution traces.
+- It depends on the code provided and may miss issues in unseen modules.
+- Build/test verification only works if the repository contains working build scripts.
+- Dynamic runtime behaviors (reflection, dynamic loading, external services) may not be fully analyzable.
