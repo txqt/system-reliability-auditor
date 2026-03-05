@@ -1,22 +1,10 @@
 ---
 name: system-reliability-auditor
 description: |
-  Audits backend code for architectural, concurrency, lifecycle, and
-  state-management reliability issues using evidence-first reasoning.
-
-  Detects and reports provable problems such as:
-  - race conditions
-  - cancellation-handling bugs
-  - resource leaks (processes, streams, handles)
-  - invalid lifecycle transitions and partial initialization
-  - stale cached-state divergence and cross-module assumptions
-
-  Use when the user asks to:
-  - "audit this code"
-  - "find race conditions"
-  - "review lifecycle or shutdown logic"
-  - "debug worker/orchestrator reliability"
-  - "check process manager, IPC or async code"
+  Audits backend systems for architectural, concurrency, lifecycle, and
+  state-management reliability issues using evidence-first analysis.
+risk: safe
+source: https://github.com/txqt/system-reliability-auditor
 ---
 
 # Goal
@@ -28,37 +16,58 @@ across languages and runtimes and provide:
 - a minimal concrete fix plan for each issue
 - a risk level for prioritization
 
-The skill purposely **does not output state machines**; it uses state-machine reasoning internally to drive accurate findings.
+The skill purposely **does not output state machines**; it uses state-machine
+reasoning internally to drive accurate findings.
 
 ---
 
 # Instructions
 
 ## 1) Analyze source code
-- Infer module lifecycles internally (initialization, running, async ops, shutdown, cancellation, recovery).
-- Only reason about states and transitions that are explicit in code or clearly implied by lifecycle logic.
-- Do NOT invent speculative states.
+
+- Infer module lifecycles internally (initialization, running, async operations,
+  shutdown, cancellation, recovery).
+- Only reason about states and transitions that are explicit in code or clearly
+  implied by lifecycle logic.
+- Do **not invent speculative states**.
 
 ## 2) Identify transition triggers
-- user actions, timers, async completions, cancellations, process exit, IPC messages, failures.
-- Note how these triggers move modules between lifecycle phases.
+
+Look for transitions triggered by:
+
+- user actions
+- timers
+- async completions
+- cancellations
+- process exits
+- IPC messages
+- failures
+
+Observe how these triggers move modules between lifecycle phases.
 
 ## 3) Report only verifiable issues
-For each issue output exactly this structure (one issue per block):
+
+For each issue output exactly this structure:
 
 ISSUE:
+
 - Module / file
 - Exact problematic transition or logic
 - Why it is dangerous
 
 EVIDENCE:
-- The exact code path or condition proving the issue (e.g., line snippet, call sequence, control flow)
+
+- The exact code path or condition proving the issue
+- Example: line snippet, call sequence, or control-flow reasoning
 
 FIX PLAN:
-- Minimal change required (guard condition, refactor, cancellation propagation, disposal)
-- Concrete code example when possible
+
+- Minimal change required
+- Guard condition, refactor, cancellation propagation, or proper disposal
+- Provide a concrete code example when possible
 
 RISK LEVEL:
+
 LOW / MEDIUM / HIGH / CRITICAL
 
 If something cannot be proven from the code, label it:
@@ -66,111 +75,182 @@ If something cannot be proven from the code, label it:
 UNCERTAIN (needs confirmation)
 
 ## 4) Prefer minimal, actionable fixes
-- Guard clauses, lifecycle checks, cancellation propagation, small refactors, proper disposal.
-- Avoid large architectural rewrites unless evidence shows they are required.
+
+Favor:
+
+- guard clauses
+- lifecycle checks
+- cancellation propagation
+- correct disposal
+- small refactors
+
+Avoid proposing large architectural rewrites unless clearly required.
 
 ---
 
-# Verification (multi-language)
+# Verification (Multi-language)
 
-After proposing fixes, verify that the project still builds and tests (if applicable) using **the project's native tooling**. Use the appropriate adapter (see adapters list below). Run the build/test commands and report if they succeed.
+After proposing fixes, verify that the project still builds and tests using the
+project's native tooling.
 
-Examples of toolchains (adapter examples):
+Run the appropriate build and test commands depending on the ecosystem.
 
-- .NET / C#
-  - Build: `dotnet build`
-  - Test: `dotnet test`
-- Node.js
-  - Install: `npm ci` (or `yarn install`)
-  - Test: `npm test` (or `yarn test`)
-- Python
-  - Setup: `python -m venv .venv && .venv/bin/pip install -r requirements.txt`
-  - Test: `pytest`
-- Go
-  - Build/Test: `go test ./...`
-- Rust
-  - Build/Test: `cargo test`
-- Java (Maven / Gradle)
-  - Maven: `mvn -B test`
-  - Gradle: `./gradlew test`
+Examples:
 
-**Verification behavior**
-- Run the chosen build/test commands in a sandboxed environment.
-- If build/test fails, do NOT automatically patch code — report failure and include failure evidence.
-- If build/test passes, mark verification succeeded.
-- If project has no build/test, mark verification as SKIPPED and continue.
+### .NET / C#
+
+Build:
+
+
+dotnet build
+
+
+Test:
+
+
+dotnet test
+
+
+### Node.js
+
+Install:
+
+
+npm ci
+
+
+Test:
+
+
+npm test
+
+
+### Python
+
+Environment setup:
+
+
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+
+Test:
+
+
+pytest
+
+
+### Go
+
+
+go test ./...
+
+
+### Rust
+
+
+cargo test
+
+
+### Java
+
+Maven:
+
+
+mvn -B test
+
+
+Gradle:
+
+
+./gradlew test
+
+
+### Verification behavior
+
+- Run build and test commands in a sandboxed environment.
+- If build or tests fail, **report the failure with evidence**.
+- Do **not automatically rewrite large parts of the code**.
+- If build and tests succeed, mark verification as successful.
+- If the project has no build or tests, mark verification as **SKIPPED**.
 
 ---
 
-# Examples (short)
+# Example
 
-## Example: worker ignoring cancellation
+## Worker ignoring cancellation
 
 ISSUE:
+
 - Module: `WorkerLoop.cs`
-- Problematic logic: `while (true) { await DoWorkAsync(); }` where shutdown calls `_cts.Cancel()` but token never observed.
-- Why dangerous: Worker may never stop; shutdown can hang or leak resources.
+- Problematic logic: `while (true) { await DoWorkAsync(); }`
+- Shutdown calls `_cts.Cancel()` but the token is never observed.
+
+Why dangerous:
+
+The worker may never stop, causing shutdown hangs or leaked resources.
 
 EVIDENCE:
-- Worker loop uses `while (true)` and `DoWorkAsync()` is invoked without a CancellationToken parameter.
-- Shutdown code calls `_cts.Cancel()` but no code path reads `_cts.Token.IsCancellationRequested`.
+
+- Worker loop uses `while (true)`
+- `DoWorkAsync()` does not accept a `CancellationToken`
+- Shutdown logic triggers `_cts.Cancel()` but no code observes it
 
 FIX PLAN:
-- Minimal fix: change loop to `while (!_cts.Token.IsCancellationRequested)` and/or pass token into `DoWorkAsync(CancellationToken)` and observe it inside.
-- Add a time-limited join during shutdown as a failsafe.
+
+Change loop condition and propagate the cancellation token.
+
+Example:
+
+
+while (!_cts.Token.IsCancellationRequested)
+{
+await DoWorkAsync(_cts.Token);
+}
+
+
+Also add a time-limited shutdown join as a failsafe.
 
 RISK LEVEL:
+
 HIGH
 
-## Example: child process leak
+---
+
+## Child process leak
 
 ISSUE:
+
 - Module: `ProcessManager`
-- Problematic logic: `var p = Process.Start(info); _workers.Add(p);` without subscribing to `p.Exited` or disposing `p`.
-- Why dangerous: Process objects (and OS child processes) can survive orchestrator exit, creating zombies.
+- Problematic logic: child processes started but not tracked or disposed
+
+Why dangerous:
+
+Processes can outlive the orchestrator and become zombie processes.
 
 EVIDENCE:
-- Process.Start used; no `EnableRaisingEvents`, no `Exited` handler, no disposal on shutdown.
+
+
+var p = Process.Start(info);
+_workers.Add(p);
+
+
+No `Exited` handler or disposal logic exists.
 
 FIX PLAN:
-- Set `p.EnableRaisingEvents = true; p.Exited += OnChildExit;`
-- Ensure `Process.Dispose()` in cleanup path.
-- Add health check to reconcile running OS processes vs internal `_workers` list.
+
+Enable exit events and ensure cleanup.
+
+Example:
+
+
+p.EnableRaisingEvents = true;
+p.Exited += OnChildExit;
+
+
+Ensure `Process.Dispose()` runs during shutdown and reconcile OS processes
+against the internal worker list.
 
 RISK LEVEL:
+
 CRITICAL
-
----
-
-# Adapter / Plugin plan
-
-To keep core analysis language-agnostic we separate verification into small adapters. Each adapter only needs a tiny manifest:
-
-`adapters/dotnet-adapter.md`
-- commands: `dotnet build`, `dotnet test`
-- env: .NET SDK required
-
-`adapters/node-adapter.md`
-- commands: `npm ci`, `npm test`
-- env: Node.js + npm
-
-`adapters/python-adapter.md`
-- commands: `python -m venv .venv && .venv/bin/pip install -r requirements.txt`, `pytest`
-- env: python3, pip
-
-Adapters are lightweight text files mapping a repo to its verification commands. New adapters can be added easily.
-
----
-
-# Output expectations
-
-- For each code sample analyzed, produce zero or more ISSUE blocks.
-- If no provable issues found, output:
-
-`No reliability issues detected from available code paths.`
-
-- Always include `<!-- Generated by System Reliability Auditor v1.0 -->` at the end of outputs.
-
----
-
-<!-- Generated by System Reliability Auditor v1.0 -->
